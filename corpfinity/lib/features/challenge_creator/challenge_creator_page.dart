@@ -161,6 +161,32 @@ class _ChallengeCreatorPageState extends State<ChallengeCreatorPage> {
     return instructions[title] ?? 'Focus on this activity mindfully and breathe deeply';
   }
 
+  List<String> _deriveBenefits(Map<String, dynamic>? item) {
+    if (item == null) {
+      return const ['Stress relief', 'Mental clarity', 'Relaxation'];
+    }
+    final pillar = (item['pillar'] as String?)?.toLowerCase() ?? '';
+    if (pillar.contains('stress')) {
+      return const ['Stress relief', 'Calm nervous system', 'Relaxation'];
+    }
+    if (pillar.contains('sleep')) {
+      return const ['Better sleep', 'Wind-down', 'Relaxation'];
+    }
+    if (pillar.contains('energy')) {
+      return const ['Energy boost', 'Activation', 'Alertness'];
+    }
+    if (pillar.contains('fitness') || pillar.contains('physical')) {
+      return const ['Mobility', 'Flexibility', 'Body alignment'];
+    }
+    if (pillar.contains('focus')) {
+      return const ['Focus', 'Clarity', 'Calm'];
+    }
+    if (pillar.contains('social')) {
+      return const ['Connection', 'Wellbeing', 'Positivity'];
+    }
+    return const ['Wellbeing', 'Mind-body balance', 'Calm'];
+  }
+
   void _regenerateChallenge() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -596,6 +622,13 @@ class _ChallengeCreatorPageState extends State<ChallengeCreatorPage> {
   Widget _buildChallengePreview() {
     final challenge = _generateChallenge();
     final duration = selectedTime == '10' ? '10+' : selectedTime;
+    final activitiesStrs = _apiActivities.isNotEmpty
+        ? _apiActivities
+            .map((a) => (a['instructions'] as String?) ?? '')
+            .where((s) => s.isNotEmpty)
+            .toList()
+        : List<String>.from((challenge['activities'] as List<String>?) ?? []);
+    final benefitsList = (challenge['benefits'] as List<String>?) ?? _deriveBenefits(_apiChallenge);
     
     return SingleChildScrollView(
       child: Column(
@@ -706,7 +739,7 @@ class _ChallengeCreatorPageState extends State<ChallengeCreatorPage> {
                 ),
                 const SizedBox(height: 12),
                 
-                ...((challenge['activities'] as List<String>?) ?? []).asMap().entries.map((entry) {
+                ...activitiesStrs.asMap().entries.map((entry) {
                   final index = entry.key;
                   final activity = entry.value;
                   return Padding(
@@ -768,7 +801,7 @@ class _ChallengeCreatorPageState extends State<ChallengeCreatorPage> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: ((challenge['benefits'] as List<String>?) ?? [])
+                  children: benefitsList
                       .map((benefit) => Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,

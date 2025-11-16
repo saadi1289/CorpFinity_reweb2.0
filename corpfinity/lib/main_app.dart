@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'features/auth/auth_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'features/home/home_page.dart';
 import 'features/progress/progress_page.dart';
@@ -135,6 +138,15 @@ class ChallengesPageWidget extends StatefulWidget {
 }
 
 class _ChallengesPageWidgetState extends State<ChallengesPageWidget> {
+  List<Map<String, dynamic>> _popular = const [];
+  List<Map<String, dynamic>> _recent = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPopular();
+    _fetchRecent();
+  }
 
 
   void _openWizard() {
@@ -144,132 +156,62 @@ class _ChallengesPageWidgetState extends State<ChallengesPageWidget> {
     );
   }
 
-  void _joinChallenge(String challengeId) {
-    // Sample challenge data based on challengeId
-    Map<String, dynamic> challengeData = _getChallengeData(challengeId);
-    
+  void _joinChallengeItem(Map<String, dynamic> item) {
+    final steps = List<String>.from(item['steps'] ?? []);
+    final total = (item['duration_minutes'] ?? 5) * 60;
+    final count = steps.isEmpty ? 1 : steps.length;
+    final base = count > 0 ? total ~/ count : total;
+    final rem = count > 0 ? total - (base * (count - 1)) : 0;
+    final activities = <Map<String, dynamic>>[];
+    for (var i = 0; i < count; i++) {
+      activities.add({
+        'title': 'Step ${i + 1}',
+        'duration': i == count - 1 ? rem : base,
+        'instructions': steps.isNotEmpty ? steps[i] : 'Follow the guided step',
+      });
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ActiveChallengeSessionPage(
-          challengeName: challengeData['name'],
-          activities: challengeData['activities'],
-          totalDuration: challengeData['totalDuration'],
+          challengeName: item['name'] ?? 'Challenge',
+          activities: activities,
+          totalDuration: total,
+          challengeId: item['id'] as int?,
         ),
       ),
     );
   }
 
-  Map<String, dynamic> _getChallengeData(String challengeId) {
-    // Sample challenge data - in a real app, this would come from a database
-    final challenges = {
-      'energy-boost': {
-        'name': 'Quick Energy Boost',
-        'totalDuration': 300, // 5 minutes
-        'activities': [
-          {
-            'title': 'Warm Up',
-            'duration': 60,
-            'instructions': 'Prepare your body with gentle movements',
-          },
-          {
-            'title': 'Deep Breathing',
-            'duration': 150,
-            'instructions': 'Focus on your breath to energize your body',
-          },
-          {
-            'title': 'Stretching',
-            'duration': 120,
-            'instructions': 'Gentle stretches to activate your muscles',
-          },
-          {
-            'title': 'Cool Down',
-            'duration': 90,
-            'instructions': 'Relax and center yourself',
-          },
-        ],
-      },
-      'stress-relief': {
-        'name': 'Stress Relief Sessions',
-        'totalDuration': 600, // 10 minutes
-        'activities': [
-          {
-            'title': 'Warm Up',
-            'duration': 120,
-            'instructions': 'Prepare your mind and body for relaxation',
-          },
-          {
-            'title': 'Deep Breathing',
-            'duration': 240,
-            'instructions': 'Breathe deeply to release tension',
-          },
-          {
-            'title': 'Progressive Relaxation',
-            'duration': 180,
-            'instructions': 'Relax each muscle group systematically',
-          },
-          {
-            'title': 'Mindful Meditation',
-            'duration': 180,
-            'instructions': 'Focus on the present moment',
-          },
-        ],
-      },
-      'focus-clarity': {
-        'name': 'Focus & Clarity',
-        'totalDuration': 900, // 15 minutes
-        'activities': [
-          {
-            'title': 'Centering',
-            'duration': 180,
-            'instructions': 'Center your mind and prepare for focus',
-          },
-          {
-            'title': 'Breathing Exercise',
-            'duration': 300,
-            'instructions': 'Controlled breathing to enhance concentration',
-          },
-          {
-            'title': 'Mental Clarity',
-            'duration': 240,
-            'instructions': 'Visualization exercises for mental clarity',
-          },
-          {
-            'title': 'Integration',
-            'duration': 180,
-            'instructions': 'Integrate your focused state',
-          },
-        ],
-      },
-      'mood-lifter': {
-        'name': 'Mood Lifter',
-        'totalDuration': 1200, // 20 minutes
-        'activities': [
-          {
-            'title': 'Energizing Warm-up',
-            'duration': 240,
-            'instructions': 'Gentle movements to lift your energy',
-          },
-          {
-            'title': 'Positive Breathing',
-            'duration': 360,
-            'instructions': 'Breathe in positivity and joy',
-          },
-          {
-            'title': 'Gratitude Practice',
-            'duration': 300,
-            'instructions': 'Focus on things you are grateful for',
-          },
-          {
-            'title': 'Joyful Integration',
-            'duration': 300,
-            'instructions': 'Integrate positive feelings into your day',
-          },
-        ],
-      },
-    };
+  Future<void> _fetchPopular() async {
+    try {
+      final res = await http.get(Uri.parse('${AuthService().baseUrl}/challenges'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+        setState(() {
+          _popular = items.take(8).toList();
+        });
+      }
+    } catch (_) {}
+  }
 
-    return challenges[challengeId] ?? challenges['energy-boost']!;
+  Future<void> _fetchRecent() async {
+    try {
+      final token = await AuthService().getValidAccessToken();
+      if (token == null) return;
+      final res = await http.get(
+        Uri.parse('${AuthService().baseUrl}/activity/recent'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+        setState(() {
+          _recent = items;
+        });
+      }
+    } catch (_) {}
   }
 
 
@@ -396,13 +338,15 @@ class _ChallengesPageWidgetState extends State<ChallengesPageWidget> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
-                  children: [
-                    _buildCompletedCard('5-Minute Morning Energizer', 'Completed 2 hours ago', 'assets/illustrations/increased_energy.svg'),
-                    const SizedBox(height: 12),
-                    _buildCompletedCard('10-Minute Desk Relief', 'Completed yesterday', 'assets/illustrations/physical_fitness.svg'),
-                    const SizedBox(height: 12),
-                    _buildCompletedCard('15-Minute Stress Buster', 'Completed 2 days ago', 'assets/illustrations/stress_reduction.svg'),
-                  ],
+                  children: _recent.map((r) {
+                    final title = (r['title'] ?? 'Session').toString();
+                    final started = (r['started_at'] ?? '').toString();
+                    final pillarAsset = 'assets/illustrations/increased_energy.svg';
+                    return Column(children: [
+                      _buildCompletedCard(title, started, pillarAsset),
+                      const SizedBox(height: 12),
+                    ]);
+                  }).toList(),
                 ),
               ),
               
@@ -425,51 +369,27 @@ class _ChallengesPageWidgetState extends State<ChallengesPageWidget> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
-                  children: [
-                    _buildPopularCard(
-                      'Quick Energy Boost',
-                      '5-minute sessions to increase energy',
-                      '5 mins',
-                      const Color(0xFF5FCCC4),
-                      const Color(0xFFF0F9F8),
-                      '4.8',
-                      '1.2k',
-                      'energy-boost',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildPopularCard(
-                      'Stress Relief Sessions',
-                      '10-minute guided stress reduction',
-                      '10 mins',
-                      const Color(0xFFEF4444),
-                      const Color(0xFFFEF2F2),
-                      '4.9',
-                      '856',
-                      'stress-relief',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildPopularCard(
-                      'Focus & Clarity',
-                      '15-minute concentration enhancement',
-                      '15 mins',
-                      const Color(0xFF8B5CF6),
-                      const Color(0xFFF3F4F6),
-                      '4.7',
-                      '2.1k',
-                      'focus-clarity',
-                    ),
-                    const SizedBox(height: 12),
-                    _buildPopularCard(
-                      'Mood Lifter',
-                      '20-minute sessions for better mood',
-                      '20 mins',
-                      const Color(0xFF10B981),
-                      const Color(0xFFF0FDF4),
-                      '4.6',
-                      '634',
-                      'mood-lifter',
-                    ),
-                  ],
+                  children: _popular.map((c) {
+                    final name = (c['name'] ?? 'Challenge').toString();
+                    final desc = (c['description'] ?? '').toString();
+                    final mins = ((c['duration_minutes'] ?? 5) as int).toString();
+                    final color = const Color(0xFF5FCCC4);
+                    final bg = const Color(0xFFF0F9F8);
+                    return Column(children: [
+                      _buildPopularCard(
+                        name,
+                        desc,
+                        '$mins mins',
+                        color,
+                        bg,
+                        '4.8',
+                        '1.2k',
+                        c,
+                      ),
+                      const SizedBox(height: 12),
+                      const SizedBox.shrink(),
+                    ]);
+                  }).toList(),
                 ),
               ),
             ],
@@ -636,7 +556,7 @@ class _ChallengesPageWidgetState extends State<ChallengesPageWidget> {
     );
   }
 
-  Widget _buildPopularCard(String title, String description, String duration, Color durationColor, Color durationBgColor, String rating, String joined, String challengeId) {
+  Widget _buildPopularCard(String title, String description, String duration, Color durationColor, Color durationBgColor, String rating, String joined, Map<String, dynamic> item) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -714,7 +634,7 @@ class _ChallengesPageWidgetState extends State<ChallengesPageWidget> {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: () => _joinChallenge(challengeId),
+            onPressed: () => _joinChallengeItem(item),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF5FCCC4),
               foregroundColor: Colors.white,

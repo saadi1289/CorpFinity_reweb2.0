@@ -53,8 +53,23 @@ class ChallengeCompletion(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     challenge_id: Mapped[int] = mapped_column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False, index=True)
     pillar: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     energy_level: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    challenge_id: Mapped[int] = mapped_column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), index=True)
+    pillar: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    energy_level: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    started_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+    ended_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    intensity: Mapped[str] = mapped_column(String(20), nullable=False, default="MEDIUM")
+    points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

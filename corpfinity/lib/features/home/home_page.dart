@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../auth/auth_service.dart';
 import '../active_challenge/active_challenge_session_page.dart';
 import '../challenge_creator/challenge_creator_page.dart';
 
@@ -11,134 +14,68 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  
-  Map<String, dynamic> _getChallengeData(String challengeType) {
-    final challenges = {
-      'morning-stretch': {
-        'name': 'Morning Stretch Challenge',
-        'totalDuration': 900, // 15 minutes
-        'activities': [
-          {
-            'title': 'Warm Up',
-            'duration': 180,
-            'instructions': 'Gentle movements to prepare your body',
-          },
-          {
-            'title': 'Neck & Shoulders',
-            'duration': 240,
-            'instructions': 'Release tension in your neck and shoulders',
-          },
-          {
-            'title': 'Full Body Stretch',
-            'duration': 300,
-            'instructions': 'Stretch all major muscle groups',
-          },
-          {
-            'title': 'Cool Down',
-            'duration': 180,
-            'instructions': 'Relax and center yourself',
-          },
-        ],
-      },
-      'mindful-breathing': {
-        'name': 'Mindful Breathing',
-        'totalDuration': 180, // 3 minutes
-        'activities': [
-          {
-            'title': 'Preparation',
-            'duration': 30,
-            'instructions': 'Find a comfortable position and close your eyes',
-          },
-          {
-            'title': 'Deep Breathing',
-            'duration': 120,
-            'instructions': 'Breathe in for 4, hold for 4, exhale for 4',
-          },
-          {
-            'title': 'Integration',
-            'duration': 30,
-            'instructions': 'Take a moment to notice how you feel',
-          },
-        ],
-      },
-      'office-stretch': {
-        'name': 'Office Stretch',
-        'totalDuration': 300, // 5 minutes
-        'activities': [
-          {
-            'title': 'Neck Release',
-            'duration': 90,
-            'instructions': 'Gentle neck stretches to release tension',
-          },
-          {
-            'title': 'Shoulder Rolls',
-            'duration': 90,
-            'instructions': 'Roll your shoulders to loosen tight muscles',
-          },
-          {
-            'title': 'Spinal Twist',
-            'duration': 120,
-            'instructions': 'Seated spinal twists for back relief',
-          },
-        ],
-      },
-      'energy-reset': {
-        'name': 'Energy Reset',
-        'totalDuration': 420, // 7 minutes
-        'activities': [
-          {
-            'title': 'Energizing Breath',
-            'duration': 120,
-            'instructions': 'Quick breathing exercises to boost energy',
-          },
-          {
-            'title': 'Movement Flow',
-            'duration': 180,
-            'instructions': 'Simple movements to activate your body',
-          },
-          {
-            'title': 'Focus Setting',
-            'duration': 120,
-            'instructions': 'Set your intention for renewed energy',
-          },
-        ],
-      },
-      'calm-mind': {
-        'name': 'Calm Mind',
-        'totalDuration': 600, // 10 minutes
-        'activities': [
-          {
-            'title': 'Centering',
-            'duration': 120,
-            'instructions': 'Center yourself and prepare for calm',
-          },
-          {
-            'title': 'Mindful Meditation',
-            'duration': 300,
-            'instructions': 'Focus on your breath and let thoughts pass',
-          },
-          {
-            'title': 'Peaceful Transition',
-            'duration': 180,
-            'instructions': 'Gently return to your day with calm energy',
-          },
-        ],
-      },
-    };
+  String? _userName;
+  Map<String, dynamic>? _featured;
+  List<Map<String, dynamic>> _quick = const [];
 
-    return challenges[challengeType] ?? challenges['mindful-breathing']!;
+  @override
+  void initState() {
+    super.initState();
+    _fetchUser();
+    _fetchFeatured();
   }
 
-  void _startChallenge(String challengeType) {
-    final challengeData = _getChallengeData(challengeType);
-    
+  Future<void> _fetchUser() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/auth/me'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      setState(() {
+        _userName = (data['username'] ?? '').toString();
+      });
+    }
+  }
+
+  Future<void> _fetchFeatured() async {
+    try {
+      final res = await http.get(Uri.parse('${AuthService().baseUrl}/challenges'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+        setState(() {
+          _featured = items.isNotEmpty ? items.first : null;
+          _quick = items.take(4).toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _startChallengeItem(Map<String, dynamic> item) {
+    final steps = List<String>.from(item['steps'] ?? []);
+    final total = (item['duration_minutes'] ?? 5) * 60;
+    final count = steps.isEmpty ? 1 : steps.length;
+    final base = count > 0 ? total ~/ count : total;
+    final rem = count > 0 ? total - (base * (count - 1)) : 0;
+    final activities = <Map<String, dynamic>>[];
+    for (var i = 0; i < count; i++) {
+      activities.add({
+        'title': 'Step ${i + 1}',
+        'duration': i == count - 1 ? rem : base,
+        'instructions': steps.isNotEmpty ? steps[i] : 'Follow the guided step',
+      });
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ActiveChallengeSessionPage(
-          challengeName: challengeData['name'],
-          activities: challengeData['activities'],
-          totalDuration: challengeData['totalDuration'],
+          challengeName: item['name']?.toString() ?? 'Challenge',
+          activities: activities,
+          totalDuration: total,
+          challengeId: item['id'] as int?,
         ),
       ),
     );
@@ -212,9 +149,9 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Good Morning, Alex',
-              style: TextStyle(
+            Text(
+              _userName != null && _userName!.isNotEmpty ? 'Good Morning, ${_userName!}' : 'Good Morning',
+              style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -432,9 +369,9 @@ class _HomePageState extends State<HomePage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Morning Stretch Challenge',
-                    style: TextStyle(
+                  Text(
+                    (_featured != null ? (_featured!['name'] ?? 'Challenge') : 'Featured Challenge').toString(),
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1A3A3A),
@@ -449,9 +386,9 @@ class _HomePageState extends State<HomePage> {
                         color: Color(0xFF5FCCC4),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        '15 mins',
-                        style: TextStyle(
+                      Text(
+                        '${((_featured != null ? (_featured!['duration_minutes'] ?? 0) : 0) as int)} mins',
+                        style: const TextStyle(
                           fontSize: 14,
                           color: Color(0xFF5A7878),
                         ),
@@ -463,9 +400,9 @@ class _HomePageState extends State<HomePage> {
                         color: Color(0xFF5FCCC4),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'Medium',
-                        style: TextStyle(
+                      Text(
+                        (_featured != null ? ((_featured!['energy_level'] ?? 'MEDIUM').toString()) : 'MEDIUM'),
+                        style: const TextStyle(
                           fontSize: 14,
                           color: Color(0xFF5A7878),
                         ),
@@ -495,7 +432,11 @@ class _HomePageState extends State<HomePage> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => _startChallenge('morning-stretch'),
+                      onPressed: () {
+                        if (_featured != null) {
+                          _startChallengeItem(_featured!);
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF5FCCC4),
                         foregroundColor: Colors.white,
@@ -524,13 +465,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildQuickChallenges() {
-    final challenges = [
-      {'title': 'Mindful Breathing', 'duration': '3 mins', 'type': 'mindful-breathing'},
-      {'title': 'Office Stretch', 'duration': '5 mins', 'type': 'office-stretch'},
-      {'title': 'Energy Reset', 'duration': '7 mins', 'type': 'energy-reset'},
-      {'title': 'Calm Mind', 'duration': '10 mins', 'type': 'calm-mind'},
-    ];
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -543,7 +477,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(height: 16),
-        ...challenges.map((challenge) => Padding(
+        ...(_quick.isNotEmpty ? _quick : const <Map<String, dynamic>>[]).map((challenge) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Container(
             padding: const EdgeInsets.all(16),
@@ -566,7 +500,7 @@ class _HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        challenge['title']!,
+                        (challenge['name'] ?? 'Challenge').toString(),
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -583,7 +517,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            challenge['duration']!,
+                            '${(challenge['duration_minutes'] ?? 0)} mins',
                             style: const TextStyle(
                               fontSize: 14,
                               color: Color(0xFF5A7878),
@@ -595,7 +529,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 ElevatedButton(
-                  onPressed: () => _startChallenge(challenge['type']!),
+                  onPressed: () => _startChallengeItem(challenge),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5FCCC4),
                     foregroundColor: Colors.white,

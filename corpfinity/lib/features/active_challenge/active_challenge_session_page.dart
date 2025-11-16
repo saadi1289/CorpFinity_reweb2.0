@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
 import '../../main_app.dart';
@@ -25,11 +26,12 @@ class ActiveChallengeSessionPage extends StatefulWidget {
 
 class _ActiveChallengeSessionPageState extends State<ActiveChallengeSessionPage>
     with TickerProviderStateMixin {
-  int currentActivityIndex = 1; // Starting from activity 2 as shown in design
-  int remainingSeconds = 150; // 2:30 as shown in design
+  int currentActivityIndex = 0;
+  int remainingSeconds = 0;
   bool isPaused = false;
   Timer? _timer;
   late AnimationController _progressController;
+  String _intensity = 'MEDIUM';
 
   @override
   void initState() {
@@ -38,6 +40,7 @@ class _ActiveChallengeSessionPageState extends State<ActiveChallengeSessionPage>
       duration: const Duration(seconds: 1),
       vsync: this,
     );
+    remainingSeconds = (widget.activities.isNotEmpty ? (widget.activities[0]['duration'] as int? ?? 180) : 180);
     _startTimer();
   }
 
@@ -124,6 +127,19 @@ class _ActiveChallengeSessionPageState extends State<ActiveChallengeSessionPage>
           'Authorization': 'Bearer $token',
         },
       );
+      final body = {
+        'challenge_id': widget.challengeId,
+        'duration_seconds': widget.totalDuration,
+        'intensity': _intensity,
+      };
+      await http.post(
+        Uri.parse('$base/sessions'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
     } catch (_) {}
   }
 
@@ -192,6 +208,30 @@ class _ActiveChallengeSessionPageState extends State<ActiveChallengeSessionPage>
     return (activityDuration - remainingSeconds) / activityDuration;
   }
 
+  List<String> _splitInstructions(String text) {
+    final byPipe = text.split('|');
+    if (byPipe.length > 1) {
+      return byPipe.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
+    final byDot = text.split(RegExp(r'\.(\s+|\n|\r|$)'));
+    return byDot.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+  }
+
+  int _previewPoints() {
+    final minutes = (widget.totalDuration ~/ 60);
+    final base = minutes > 0 ? minutes : 1;
+    int mult = 2;
+    final v = _intensity.toUpperCase();
+    if (v == 'LOW') {
+      mult = 1;
+    } else if (v == 'MEDIUM') {
+      mult = 2;
+    } else if (v == 'HIGH') {
+      mult = 3;
+    }
+    return base * mult;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentActivity = widget.activities[currentActivityIndex];
@@ -253,6 +293,38 @@ class _ActiveChallengeSessionPageState extends State<ActiveChallengeSessionPage>
                 child: Column(
                   children: [
                     const SizedBox(height: 32),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Low'),
+                          selected: _intensity == 'LOW',
+                          onSelected: (_) => setState(() => _intensity = 'LOW'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Medium'),
+                          selected: _intensity == 'MEDIUM',
+                          onSelected: (_) => setState(() => _intensity = 'MEDIUM'),
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('High'),
+                          selected: _intensity == 'HIGH',
+                          onSelected: (_) => setState(() => _intensity = 'HIGH'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Points preview: ${_previewPoints()}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
                     // Timer Circle
                     SizedBox(
@@ -409,18 +481,12 @@ class _ActiveChallengeSessionPageState extends State<ActiveChallengeSessionPage>
 
                           const SizedBox(height: 24),
 
-                          // Instructions
-                          Column(
-                            children: [
-                              _buildInstruction('Inhale for 4 seconds'),
-                              const SizedBox(height: 12),
-                              _buildInstruction('Hold for 4 seconds'),
-                              const SizedBox(height: 12),
-                              _buildInstruction('Exhale for 4 seconds'),
-                              const SizedBox(height: 12),
-                              _buildInstruction('Repeat cycle'),
-                            ],
-                          ),
+                    // Instructions
+                    Column(
+                      children: _splitInstructions((currentActivity['instructions'] as String?) ?? '')
+                          .map((p) => _buildInstruction(p))
+                          .toList(),
+                    ),
                         ],
                       ),
                     ),

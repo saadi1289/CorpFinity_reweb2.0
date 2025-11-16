@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../auth/auth_service.dart';
 
 class ProgressPage extends StatefulWidget {
   const ProgressPage({super.key});
@@ -9,6 +12,173 @@ class ProgressPage extends StatefulWidget {
 
 class _ProgressPageState extends State<ProgressPage> {
   String selectedPeriod = 'Weekly';
+  int _completed = 0;
+  int _totalMinutes = 0;
+  int _streakDays = 0;
+  int _points = 0;
+  List<Map<String, dynamic>> _recent = const [];
+  List<Map<String, dynamic>> _breakdown = const [];
+  List<Map<String, dynamic>> _calendarDays = const [];
+  List<Map<String, dynamic>> _weeklyBars = const [];
+  List<Map<String, dynamic>> _monthlyBars = const [];
+  List<Map<String, dynamic>> _yearlyBars = const [];
+
+  String _monthName(int m) {
+    const names = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
+    ];
+    return names[(m - 1).clamp(0, 11)];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchSummary();
+    _fetchRecent();
+    _fetchBreakdown();
+    _fetchCalendar();
+    _fetchWeekly();
+  }
+
+  Future<void> _fetchSummary() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/progress/summary'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      setState(() {
+        _completed = data['completed_count'] ?? 0;
+        _totalMinutes = data['total_minutes'] ?? 0;
+        _streakDays = data['streak_days'] ?? 0;
+        _points = data['points'] ?? 0;
+      });
+    }
+  }
+
+  Future<void> _fetchRecent() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/activity/recent'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+      setState(() {
+        _recent = items;
+      });
+    }
+  }
+
+  Future<void> _fetchBreakdown() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/progress/breakdown'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+      setState(() {
+        _breakdown = items;
+      });
+    }
+  }
+
+  Future<void> _fetchCalendar() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final now = DateTime.now();
+    final monthStr = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/progress/calendar?month=$monthStr'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+      final firstDay = DateTime(now.year, now.month, 1);
+      final leading = firstDay.weekday % 7;
+      final grid = <Map<String, dynamic>>[];
+      for (int i = 0; i < leading; i++) {
+        grid.add({'day': '', 'activity': 0});
+      }
+      for (final it in items) {
+        final dateStr = it['date'] as String;
+        final dt = DateTime.parse(dateStr);
+        final activity = (it['activity'] as int);
+        final mapped = activity == 2 ? 3 : activity;
+        grid.add({'day': dt.day.toString(), 'activity': mapped});
+      }
+      setState(() {
+        _calendarDays = grid;
+      });
+    }
+  }
+
+  Future<void> _fetchWeekly() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/progress/weekly'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+      setState(() {
+        _weeklyBars = items;
+      });
+    }
+  }
+
+  Future<void> _fetchMonthly() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/progress/monthly'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+      setState(() {
+        _monthlyBars = items;
+      });
+    }
+  }
+
+  Future<void> _fetchYearly() async {
+    final token = await AuthService().getValidAccessToken();
+    if (token == null) return;
+    final res = await http.get(
+      Uri.parse('${AuthService().baseUrl}/progress/yearly'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      final items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+      setState(() {
+        _yearlyBars = items;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,11 +246,11 @@ class _ProgressPageState extends State<ProgressPage> {
           const SizedBox(height: 16),
           Row(
             children: [
-              _buildPeriodButton('Weekly', true),
+              _buildPeriodButton('Weekly', selectedPeriod == 'Weekly'),
               const SizedBox(width: 8),
-              _buildPeriodButton('Monthly', false),
+              _buildPeriodButton('Monthly', selectedPeriod == 'Monthly'),
               const SizedBox(width: 8),
-              _buildPeriodButton('Yearly', false),
+              _buildPeriodButton('Yearly', selectedPeriod == 'Yearly'),
             ],
           ),
         ],
@@ -94,6 +264,13 @@ class _ProgressPageState extends State<ProgressPage> {
         setState(() {
           selectedPeriod = text;
         });
+        if (text == 'Weekly') {
+          _fetchWeekly();
+        } else if (text == 'Monthly') {
+          _fetchMonthly();
+        } else if (text == 'Yearly') {
+          _fetchYearly();
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Switched to $text view'),
@@ -148,33 +325,33 @@ class _ProgressPageState extends State<ProgressPage> {
             children: [
               _buildMetricCard(
                 'Completed',
-                '24',
-                '12%',
-                'vs last week',
+                '$_completed',
+                '',
+                '',
                 Icons.check_circle,
                 true,
               ),
               _buildMetricCard(
                 'Total Minutes',
-                '360',
-                '8%',
-                'vs last week',
+                '$_totalMinutes',
+                '',
+                '',
                 Icons.access_time,
                 true,
               ),
               _buildMetricCard(
                 'Day Streak',
-                '7',
-                '2 days',
-                'from last',
+                '$_streakDays',
+                '',
+                '',
                 Icons.local_fire_department,
                 true,
               ),
               _buildMetricCard(
                 'Points Earned',
-                '480',
-                '15%',
-                'vs last week',
+                '$_points',
+                '',
+                '',
                 Icons.star,
                 true,
               ),
@@ -275,9 +452,13 @@ class _ProgressPageState extends State<ProgressPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'This Week\'s Activity',
-            style: TextStyle(
+          Text(
+            selectedPeriod == 'Weekly'
+                ? 'This Week\'s Activity'
+                : selectedPeriod == 'Monthly'
+                    ? 'This Month\'s Activity'
+                    : 'This Year\'s Activity',
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1A1A1A),
@@ -304,29 +485,51 @@ class _ProgressPageState extends State<ProgressPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _buildWeeklyBarItem('Mon', 5, 0.83),
-                      _buildWeeklyBarItem('Tue', 3, 0.5),
-                      _buildWeeklyBarItem('Wed', 6, 1.0),
-                      _buildWeeklyBarItem('Thu', 4, 0.67),
-                      _buildWeeklyBarItem('Fri', 2, 0.33),
-                      _buildWeeklyBarItem('Sat', 0, 0.0),
-                      _buildWeeklyBarItem('Sun', 0, 0.0),
-                    ],
+                    children: (() {
+                      final bars = selectedPeriod == 'Weekly'
+                          ? _weeklyBars
+                          : selectedPeriod == 'Monthly'
+                              ? _monthlyBars
+                              : _yearlyBars;
+                      final fallback = selectedPeriod == 'Weekly'
+                          ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                          : selectedPeriod == 'Monthly'
+                              ? ['W1', 'W2', 'W3', 'W4', 'W5']
+                              : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                      return (bars.isNotEmpty
+                          ? bars
+                              .map((e) => _buildWeeklyBarItem(
+                                    e['day']?.toString() ?? '',
+                                    (e['sessions'] ?? 0) as int,
+                                    ((e['ratio'] ?? 0.0) as num).toDouble(),
+                                  ))
+                              .toList()
+                          : fallback
+                              .map((d) => _buildWeeklyBarItem(d, 0, 0.0))
+                              .toList());
+                    }()),
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  'Sessions completed per day',
-                  style: TextStyle(
+                Text(
+                  selectedPeriod == 'Weekly'
+                      ? 'Sessions completed per day'
+                      : selectedPeriod == 'Monthly'
+                          ? 'Sessions completed per week'
+                          : 'Sessions completed per month',
+                  style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF6B8583),
                   ),
                 ),
-                const Text(
-                  'Goal: 3 sessions daily',
-                  style: TextStyle(
+                Text(
+                  selectedPeriod == 'Weekly'
+                      ? 'Goal: 3 sessions daily'
+                      : selectedPeriod == 'Monthly'
+                          ? 'Goal: 3 sessions weekly'
+                          : 'Goal: 12 sessions monthly',
+                  style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xFF6B8583),
                   ),
@@ -383,9 +586,9 @@ class _ProgressPageState extends State<ProgressPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'November 2024',
-            style: TextStyle(
+          Text(
+            '${_monthName(DateTime.now().month)} ${DateTime.now().year}',
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1A1A1A),
@@ -447,19 +650,7 @@ class _ProgressPageState extends State<ProgressPage> {
   }
 
   Widget _buildCalendarGrid() {
-    // November 2024 calendar data
-    final List<Map<String, dynamic>> calendarDays = [
-      // Week 1
-      {'day': '', 'activity': 0}, {'day': '', 'activity': 0}, {'day': '', 'activity': 0}, {'day': '', 'activity': 0}, {'day': '', 'activity': 0}, {'day': '1', 'activity': 0}, {'day': '2', 'activity': 2},
-      // Week 2
-      {'day': '3', 'activity': 3}, {'day': '4', 'activity': 3}, {'day': '5', 'activity': 3}, {'day': '6', 'activity': 2}, {'day': '7', 'activity': 3}, {'day': '8', 'activity': 3}, {'day': '9', 'activity': 0},
-      // Week 3
-      {'day': '10', 'activity': 0}, {'day': '11', 'activity': 0}, {'day': '12', 'activity': 0}, {'day': '13', 'activity': 0}, {'day': '14', 'activity': 0}, {'day': '15', 'activity': 0}, {'day': '16', 'activity': 0},
-      // Week 4
-      {'day': '17', 'activity': 0}, {'day': '18', 'activity': 0}, {'day': '19', 'activity': 0}, {'day': '20', 'activity': 0}, {'day': '21', 'activity': 0}, {'day': '22', 'activity': 0}, {'day': '23', 'activity': 0},
-      // Week 5
-      {'day': '24', 'activity': 0}, {'day': '25', 'activity': 0}, {'day': '26', 'activity': 0}, {'day': '27', 'activity': 0}, {'day': '28', 'activity': 0}, {'day': '29', 'activity': 0}, {'day': '30', 'activity': 0},
-    ];
+    final List<Map<String, dynamic>> calendarDays = _calendarDays.isNotEmpty ? _calendarDays : [];
 
     return GridView.builder(
       shrinkWrap: true,
@@ -534,40 +725,29 @@ class _ProgressPageState extends State<ProgressPage> {
   }
 
   Widget _buildActivityBreakdown() {
-    final activities = [
-      {
-        'title': 'Breathing',
-        'sessions': '8 sessions',
-        'minutes': '120 min',
-        'percentage': '33%',
-        'progress': 0.33,
-        'icon': Icons.self_improvement,
-      },
-      {
-        'title': 'Movement',
-        'sessions': '6 sessions',
-        'minutes': '90 min',
-        'percentage': '25%',
-        'progress': 0.25,
-        'icon': Icons.directions_walk,
-      },
-      {
-        'title': 'Energy',
-        'sessions': '5 sessions',
-        'minutes': '75 min',
-        'percentage': '21%',
-        'progress': 0.21,
-        'icon': Icons.bolt,
-      },
-      {
-        'title': 'Focus',
-        'sessions': '5 sessions',
-        'minutes': '75 min',
-        'percentage': '21%',
-        'progress': 0.21,
-        'icon': Icons.center_focus_strong,
-      },
-    ];
+    final activities = _breakdown.map((b) {
+      final title = (b['pillar'] ?? '').toString();
+      IconData icon = Icons.self_improvement;
+      if (title.contains('Energy')) {
+        icon = Icons.bolt;
+      } else if (title.contains('Focus')) {
+        icon = Icons.center_focus_strong;
+      } else if (title.contains('Movement')) {
+        icon = Icons.directions_walk;
+      }
+      final sessions = b['sessions'] ?? 0;
+      final minutes = b['minutes'] ?? 0;
+      final percentage = b['percentage'] ?? 0;
+      final progress = (percentage as num).toDouble() / 100.0;
+      return {
+        'title': title,
+        'sessions': '$sessions sessions',
+        'minutes': '$minutes min',
+        'percentage': '$percentage%',
+        'progress': progress,
+        'icon': icon,
+      };
+    }).toList();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -689,40 +869,14 @@ class _ProgressPageState extends State<ProgressPage> {
   }
 
   Widget _buildRecentActivity() {
-    final recentActivities = [
-      {
-        'title': 'Morning Breathing',
-        'time': 'Today, 8:30 AM',
-        'points': '+20 pts',
-        'duration': '15 min',
-        'intensity': 'High',
-        'icon': Icons.self_improvement,
-      },
-      {
-        'title': 'Evening Walk',
-        'time': 'Yesterday, 6:15 PM',
-        'points': '+30 pts',
-        'duration': '30 min',
-        'intensity': 'Medium',
-        'icon': Icons.directions_walk,
-      },
-      {
-        'title': 'Focus Session',
-        'time': 'Yesterday, 2:00 PM',
-        'points': '+25 pts',
-        'duration': '20 min',
-        'intensity': 'High',
-        'icon': Icons.center_focus_strong,
-      },
-      {
-        'title': 'Energy Boost',
-        'time': '2 days ago, 10:30 AM',
-        'points': '+15 pts',
-        'duration': '10 min',
-        'intensity': 'Low',
-        'icon': Icons.bolt,
-      },
-    ];
+    final recentActivities = _recent.map((e) => {
+      'title': e['title'] ?? 'Session',
+      'time': e['started_at']?.toString() ?? '',
+      'points': '+${e['points'] ?? 0} pts',
+      'duration': '${e['duration_minutes'] ?? 0} min',
+      'intensity': (e['intensity'] ?? '').toString(),
+      'icon': Icons.self_improvement,
+    }).toList();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
